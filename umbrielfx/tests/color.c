@@ -1376,6 +1376,148 @@ out:
   return ok;
 }
 
+static bool test_tone_map_bt2390_math(void) {
+  float params[4] = {0};
+  bool ok = check(!color_tone_map_bt2390_params(203.0f, 400.0f, 400.0f, params), "content at the target peak is unmapped");
+  ok = check(!color_tone_map_bt2390_params(203.0f, 300.0f, 400.0f, params), "content below the target peak is unmapped")
+      && ok;
+  ok = check(!color_tone_map_bt2390_params(203.0f, 1000.0f, 0.0f, params), "an unknown target peak is unmapped") && ok;
+
+  ok = check(color_tone_map_bt2390_params(203.0f, 1000.0f, 400.0f, params), "1000 to 400 cd/m2 is mapped") && ok;
+  const float unit = 203.0f;
+  ok = check(
+           fabsf(color_tone_map_bt2390_eval(params, 1000.0f / unit) * unit - 400.0f) < 2.0f,
+           "the source peak lands on the target peak"
+       )
+      && ok;
+  ok = check(
+           fabsf(color_tone_map_bt2390_eval(params, 4000.0f / unit) * unit - 400.0f) < 2.0f,
+           "light beyond the source peak clamps to the target peak"
+       )
+      && ok;
+  ok = check(color_tone_map_bt2390_eval(params, 100.0f / unit) == 100.0f / unit, "midtones below the knee are exact")
+      && ok;
+  ok = check(color_tone_map_bt2390_eval(params, 0.0f) == 0.0f, "black stays black") && ok;
+
+  // Monotonic and continuous across the knee: no banding or inverted steps.
+  float previous = 0.0f;
+  float largest_step = 0.0f;
+  for (int i = 1; i <= 2000; i++) {
+    const float nits = 1000.0f * (float)i / 2000.0f;
+    const float mapped = color_tone_map_bt2390_eval(params, nits / unit) * unit;
+    ok = check(mapped >= previous, "BT.2390 mapping is monotonic") && ok;
+    largest_step = fmaxf(largest_step, mapped - previous);
+    previous = mapped;
+  }
+  ok = check(largest_step < 1.0f, "BT.2390 mapping is continuous") && ok;
+
+  // HDR to SDR: SDR white is the target, so the source peak becomes 1.0.
+  ok = check(color_tone_map_bt2390_params(203.0f, 1000.0f, 203.0f, params), "1000 cd/m2 to SDR is mapped") && ok;
+  ok = check(fabsf(color_tone_map_bt2390_eval(params, 1000.0f / 203.0f) - 1.0f) < 0.01f, "HDR peak reaches SDR white")
+      && ok;
+  return ok;
+}
+
+static bool test_scene_tone_map_bt2390(struct fixture* fixture) {
+  if (!enable_color_scene_output(fixture)) {
+    return false;
+  }
+  const float moderate_nits = 300.0f;
+  const float peak_nits = 1000.0f;
+  const float moderate_pq = linear_to_pq(moderate_nits / 10000.0f);
+  const float peak_pq = linear_to_pq(peak_nits / 10000.0f);
+  const float pq_pixels[2][4] = {
+      {moderate_pq, moderate_pq, moderate_pq, 1.0f},
+      {peak_pq, peak_pq, peak_pq, 1.0f},
+  };
+  struct wlr_buffer* source = create_linear_buffer(pq_pixels);
+  struct wlr_scene* scene = wlr_scene_create();
+  struct wlr_scene_output* output = scene != NULL ? wlr_scene_output_create(scene, fixture->output) : NULL;
+  struct wlr_scene_buffer* content =
+      scene != NULL && source != NULL ? wlr_scene_buffer_create(&scene->tree, source) : NULL;
+  bool ok = check(output != NULL && content != NULL, "create tone mapping scene");
+  if (!ok) {
+    goto out;
+  }
+  wlr_scene_output_set_direct_scanout_enabled(output, false);
+  wlr_scene_output_set_sdr_white_level(output, 203.0f);
+  wlr_scene_buffer_set_dest_size(content, TEST_WIDTH, TEST_HEIGHT);
+  wlr_scene_buffer_set_filter_mode(content, WLR_SCALE_FILTER_NEAREST);
+  wlr_scene_buffer_set_transfer_function(content, WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ);
+  wlr_scene_buffer_set_primaries(content, WLR_COLOR_NAMED_PRIMARIES_BT2020);
+  wlr_scene_buffer_set_content_peak_luminance(content, peak_nits);
+
+  const float passthrough[2][3] = {
+      {moderate_nits, moderate_nits, moderate_nits},
+      {peak_nits, peak_nits, peak_nits},
+  };
+  uint8_t shown[2][4] = {0};
+  ok = render_metadata_scene(fixture, output, true, shown) && ok;
+  ok = check_pq_scene_pixel(shown[0], passthrough[0], "tone mapping off passes midtones through") && ok;
+  ok = check_pq_scene_pixel(shown[1], passthrough[1], "tone mapping off passes highlights through") && ok;
+
+  float params[4];
+  ok = check(color_tone_map_bt2390_params(203.0f, peak_nits, 400.0f, params), "reference parameters") && ok;
+  const float mapped_moderate = color_tone_map_bt2390_eval(params, moderate_nits / 203.0f) * 203.0f;
+  const float mapped_peak = color_tone_map_bt2390_eval(params, peak_nits / 203.0f) * 203.0f;
+  const float mapped[2][3] = {
+      {mapped_moderate, mapped_moderate, mapped_moderate},
+      {mapped_peak, mapped_peak, mapped_peak},
+  };
+  wlr_scene_output_set_tone_mapping(output, true, 400.0f);
+  ok = render_metadata_scene(fixture, output, true, shown) && ok;
+  ok = check_pq_scene_pixel(shown[0], mapped[0], "BT.2390 rolls off upper midtones like the reference") && ok;
+  ok = check_pq_scene_pixel(shown[1], mapped[1], "BT.2390 maps the content peak to the display peak") && ok;
+
+  // HDR10 without metadata is treated as 1000 cd/m2 content.
+  wlr_scene_buffer_set_content_peak_luminance(content, 0.0f);
+  ok = render_metadata_scene(fixture, output, true, shown) && ok;
+  ok = check_pq_scene_pixel(shown[1], mapped[1], "untagged PQ assumes a 1000 cd/m2 source") && ok;
+
+  // Content that already fits, or an unknown display peak, is left alone.
+  wlr_scene_buffer_set_content_peak_luminance(content, 350.0f);
+  ok = render_metadata_scene(fixture, output, true, shown) && ok;
+  ok = check_pq_scene_pixel(shown[0], passthrough[0], "content within the display peak is unmapped") && ok;
+  // A peak within the margin of the display peak is a mismatch, not excess.
+  wlr_scene_buffer_set_content_peak_luminance(content, 415.0f);
+  ok = render_metadata_scene(fixture, output, true, shown) && ok;
+  ok = check_pq_scene_pixel(shown[0], passthrough[0], "content within the tone mapping margin is unmapped") && ok;
+  wlr_scene_buffer_set_content_peak_luminance(content, peak_nits);
+  wlr_scene_output_set_tone_mapping(output, true, 0.0f);
+  ok = render_metadata_scene(fixture, output, true, shown) && ok;
+  ok = check_pq_scene_pixel(shown[1], passthrough[1], "an unknown display peak leaves HDR to the display") && ok;
+
+  // SDR: metadata-free PQ keeps the legacy shoulder, a declared peak uses
+  // BT.2390 and reaches SDR white exactly at that peak.
+  wlr_scene_output_set_tone_mapping(output, false, 0.0f);
+  wlr_scene_output_set_sdr_white_level(output, 0.0f);
+  uint8_t legacy[2][4] = {0};
+  ok = render_metadata_scene(fixture, output, false, legacy) && ok;
+  wlr_scene_output_set_tone_mapping(output, true, 0.0f);
+  wlr_scene_buffer_set_content_peak_luminance(content, 0.0f);
+  ok = render_metadata_scene(fixture, output, false, shown) && ok;
+  ok = check(
+           codes_close(shown[0], legacy[0], 0) && codes_close(shown[1], legacy[1], 0),
+           "SDR output keeps the shoulder for PQ without a declared peak"
+       )
+      && ok;
+  wlr_scene_buffer_set_content_peak_luminance(content, peak_nits);
+  ok = render_metadata_scene(fixture, output, false, shown) && ok;
+  for (size_t channel = 0; channel < 3; channel++) {
+    ok = check(shown[1][channel] >= 254, "SDR BT.2390 maps the declared peak to white") && ok;
+    ok = check(shown[0][channel] < shown[1][channel], "SDR BT.2390 keeps highlights distinct") && ok;
+  }
+
+out:
+  if (scene != NULL) {
+    wlr_scene_node_destroy(&scene->tree.node);
+  }
+  if (source != NULL) {
+    wlr_buffer_drop(source);
+  }
+  return ok;
+}
+
 static bool test_scene_custom_white(struct fixture* fixture) {
   if (!enable_color_scene_output(fixture)) {
     return false;
@@ -3227,6 +3369,9 @@ int main(int argc, char* argv[]) {
   if (strcmp(argv[1], "hdr-white-point-math") == 0) {
     return test_hdr_white_point_math() ? EXIT_SUCCESS : EXIT_FAILURE;
   }
+  if (strcmp(argv[1], "tone-map-bt2390-math") == 0) {
+    return test_tone_map_bt2390_math() ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
 
   struct fixture fixture;
   if (!fixture_init(&fixture)) {
@@ -3250,6 +3395,8 @@ int main(int argc, char* argv[]) {
     ok = test_scene_scrgb_absolute_luminance(&fixture);
   } else if (strcmp(argv[1], "scene-hdr-sdr-fallback") == 0) {
     ok = test_scene_hdr_sdr_fallback(&fixture);
+  } else if (strcmp(argv[1], "scene-tone-map-bt2390") == 0) {
+    ok = test_scene_tone_map_bt2390(&fixture);
   } else if (strcmp(argv[1], "hdr-white-point") == 0) {
     ok = test_hdr_white_point(&fixture);
   } else if (strcmp(argv[1], "sdr-white-point-alpha") == 0) {

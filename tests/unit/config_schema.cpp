@@ -254,6 +254,25 @@ UMBRIEL_TEST(outputSdrTransferSchemaListsCanonicalValuesAndDefault) {
   CHECK(found);
 }
 
+UMBRIEL_TEST(outputToneMappingSchemaListsValuesAndDefaults) {
+  const auto descriptions = umbriel::registry::describeConfig(umbriel::Config{});
+  bool toneMapping = false;
+  bool peak = false;
+  for (const auto& key : descriptions) {
+    if (key.path == "output.<name>.tone_mapping") {
+      toneMapping = true;
+      CHECK_EQ(key.type, std::string_view{"enum"});
+      CHECK(key.values == std::vector<std::string_view>({"bt2390", "off"}));
+      CHECK(key.defaultValue == "bt2390");
+    } else if (key.path == "output.<name>.peak_luminance") {
+      peak = true;
+      CHECK_EQ(key.type, std::string_view{"float"});
+    }
+  }
+  CHECK(toneMapping);
+  CHECK(peak);
+}
+
 UMBRIEL_TEST(effectPoolSchemaReportsMembersPoliciesAndRequiredKind) {
   const auto descriptions = umbriel::registry::describeConfig(umbriel::Config{});
   bool kind = false;

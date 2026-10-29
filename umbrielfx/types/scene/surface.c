@@ -375,6 +375,7 @@ void wlr_scene_surface_update_color(struct wlr_scene_surface* scene_surface) {
   wlr_scene_buffer_set_custom_primaries(scene_surface->buffer, state.custom_primaries);
   wlr_scene_buffer_set_luminances(scene_surface->buffer, &state.luminances, state.absolute_luminance);
   wlr_scene_buffer_set_luminance_multiplier(scene_surface->buffer, state.luminance_multiplier);
+  wlr_scene_buffer_set_content_peak_luminance(scene_surface->buffer, state.content_peak_luminance);
 }
 
 static void surface_reconfigure(struct wlr_scene_surface* scene_surface) {

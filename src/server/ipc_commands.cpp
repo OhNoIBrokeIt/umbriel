@@ -542,6 +542,15 @@ namespace umbriel {
           std::println("  fallback: {}", fallback);
         }
 
+        const double tonePeak = output.value("tone_mapping_peak", 0.0);
+        if (output.value("tone_mapping", "bt2390") == "off") {
+          std::println("  tone mapping: off");
+        } else if (tonePeak > 0.0) {
+          std::println("  tone mapping: bt2390, display peak {} cd/m2", tonePeak);
+        } else {
+          std::println("  tone mapping: bt2390, display peak unknown (HDR left to the display)");
+        }
+
         const int configuredDepth = output.value("bit_depth", 8);
         const std::string format = output.value("render_format", "invalid");
         const std::string_view activeDepth = !output.value("enabled", false) ? "none"
@@ -1008,6 +1017,8 @@ namespace umbriel {
           {"primaries", description != nullptr ? primariesName(description->primaries) : "none"},
           {"sdr_white", output->sdrWhite()},
           {"sdr_transfer", output->configuredSdrTransfer() == SdrTransfer::Srgb ? "srgb" : "gamma22"},
+          {"tone_mapping", output->configuredToneMapping() == ToneMapping::Bt2390 ? "bt2390" : "off"},
+          {"tone_mapping_peak", output->effectiveHdrMetadata() ? output->effectiveHdrMetadata()->maxLuminance : 0.0},
           {"bit_depth", output->configuredBitDepth()},
           {"bit_depth_active", output->bitDepthActive()},
           {"bit_depth_fallback_reason", output->bitDepthFallbackReason()},

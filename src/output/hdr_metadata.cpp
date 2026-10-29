@@ -141,6 +141,23 @@ namespace umbriel {
     return std::nullopt;
   }
 
+  std::optional<HdrStaticMetadata> applyPeakLuminanceOverride(
+      std::optional<HdrStaticMetadata> metadata, std::optional<double> peakLuminance
+  ) {
+    if (!peakLuminance || !(*peakLuminance > 0.0)) {
+      return metadata;
+    }
+    HdrStaticMetadata result = metadata.value_or(HdrStaticMetadata{});
+    result.maxLuminance = *peakLuminance;
+    if (result.maxFrameAverageLuminance > *peakLuminance) {
+      result.maxFrameAverageLuminance = *peakLuminance;
+    }
+    if (result.minLuminance >= *peakLuminance) {
+      result.minLuminance = 0.0;
+    }
+    return result;
+  }
+
   wlr_output_image_description makeHdrOutputDescription(
       const wlr_color_primaries* displayPrimaries, const std::optional<HdrStaticMetadata>& metadata
   ) {

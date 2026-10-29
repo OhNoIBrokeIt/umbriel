@@ -347,6 +347,9 @@ struct wlr_scene_buffer {
   struct wlr_color_luminances luminances;
   // Windows-scRGB uses absolute light on PQ outputs, independent of SDR white.
   bool absolute_luminance;
+  // Brightest content light in cd/m² from HDR metadata (MaxCLL or mastering
+  // peak). Zero means unknown. Drives tone mapping toward the output peak.
+  float content_peak_luminance;
 };
 
 /** A viewport for an output in the scene-graph */
@@ -416,6 +419,10 @@ struct wlr_scene_output {
     float hdr_white_point[3];
     bool hdr_white_point_active;
     bool hdr_white_point_cursor_locked;
+    // BT.2390 tone mapping toward the display peak on PQ outputs, and toward
+    // SDR white for content with a known peak on SDR outputs.
+    bool tone_mapping;
+    float tone_mapping_target_peak;
     struct wl_listener output_destroy;
   } WLR_PRIVATE;
 };
@@ -663,6 +670,8 @@ struct wlr_scene_surface_color_state {
   const struct wlr_color_primaries* custom_primaries;
   struct wlr_color_luminances luminances;
   bool absolute_luminance;
+  // Content peak in cd/m², zero when unknown.
+  float content_peak_luminance;
 };
 
 typedef void (*wlr_scene_surface_color_resolver_func_t)(
@@ -1055,6 +1064,9 @@ void wlr_scene_buffer_set_luminances(
     struct wlr_scene_buffer* scene_buffer, const struct wlr_color_luminances* luminances, bool absolute
 );
 
+/** Set the content peak in cd/m² from HDR metadata. Zero marks it unknown. */
+void wlr_scene_buffer_set_content_peak_luminance(struct wlr_scene_buffer* scene_buffer, float nits);
+
 /** Copy color metadata, including optional coordinates, luminances and YUV state. */
 void wlr_scene_buffer_copy_color(struct wlr_scene_buffer* dst, const struct wlr_scene_buffer* src);
 
@@ -1128,6 +1140,15 @@ bool wlr_scene_output_set_sdr_transfer_function(
  * and software cursors. Changing the value fully damages and schedules output.
  */
 void wlr_scene_output_set_hdr_white_point(struct wlr_scene_output* scene_output, const float srgb_white[3]);
+
+/**
+ * Enable BT.2390 tone mapping. On PQ outputs, content brighter than
+ * `target_peak` (cd/m², the display's peak) is rolled off into its range;
+ * zero leaves HDR content unmapped. On SDR outputs, PQ content with a known
+ * peak is mapped to SDR white. Disabled outputs keep the legacy SDR
+ * highlight shoulder. Changes fully damage and schedule the output.
+ */
+void wlr_scene_output_set_tone_mapping(struct wlr_scene_output* scene_output, bool enabled, float target_peak);
 
 struct wlr_scene_output_state_options {
   struct wlr_scene_timer* timer;

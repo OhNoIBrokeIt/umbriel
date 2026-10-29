@@ -107,4 +107,34 @@ UMBRIEL_TEST(nonHdrEdidDoesNotProduceStaticMetadata) {
   CHECK(!umbriel::hdrStaticMetadataFromEdid(edid).has_value());
 }
 
+UMBRIEL_TEST(peakLuminanceOverrideReplacesEdidPeakAndCapsFrameAverage) {
+  const umbriel::HdrStaticMetadata edid{.minLuminance = 0.0005, .maxLuminance = 1015.0, .maxFrameAverageLuminance = 600.0};
+  const auto result = umbriel::applyPeakLuminanceOverride(edid, 400.0);
+  CHECK(result.has_value());
+  CHECK_EQ(result->maxLuminance, 400.0);
+  CHECK_EQ(result->maxFrameAverageLuminance, 400.0);
+  CHECK_EQ(result->minLuminance, 0.0005);
+}
+
+UMBRIEL_TEST(peakLuminanceOverrideKeepsLowerFrameAverage) {
+  const umbriel::HdrStaticMetadata edid{.minLuminance = 0.0, .maxLuminance = 400.0, .maxFrameAverageLuminance = 250.0};
+  const auto result = umbriel::applyPeakLuminanceOverride(edid, 1000.0);
+  CHECK(result.has_value());
+  CHECK_EQ(result->maxLuminance, 1000.0);
+  CHECK_EQ(result->maxFrameAverageLuminance, 250.0);
+}
+
+UMBRIEL_TEST(peakLuminanceOverrideSuppliesMissingEdidMetadata) {
+  const auto result = umbriel::applyPeakLuminanceOverride(std::nullopt, 600.0);
+  CHECK(result.has_value());
+  CHECK_EQ(result->maxLuminance, 600.0);
+  CHECK_EQ(result->maxFrameAverageLuminance, 0.0);
+}
+
+UMBRIEL_TEST(withoutPeakLuminanceOverrideEdidMetadataIsUnchanged) {
+  const umbriel::HdrStaticMetadata edid{.minLuminance = 0.05, .maxLuminance = 418.0, .maxFrameAverageLuminance = 418.0};
+  CHECK(umbriel::applyPeakLuminanceOverride(edid, std::nullopt) == std::optional(edid));
+  CHECK(!umbriel::applyPeakLuminanceOverride(std::nullopt, std::nullopt).has_value());
+}
+
 int main() { return RUN_TESTS(); }

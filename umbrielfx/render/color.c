@@ -440,6 +440,50 @@ void wlr_color_primaries_transform_absolute_colorimetric(
   wlr_matrix_multiply(matrix, xyz_to_destination, source_to_xyz);
 }
 
+static float st2084_pq_eval_eotf(float x) {
+  float c1 = 0.8359375;
+  float c2 = 18.8515625;
+  float c3 = 18.6875;
+  float m = 78.84375;
+  float n = 0.1593017578125;
+  float p = powf(fmaxf(x, 0.0f), 1.0f / m);
+  return powf(fmaxf(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / n);
+}
+
+bool color_tone_map_bt2390_params(float unit_nits, float source_peak, float target_peak, float params[static 4]) {
+  if (!(unit_nits > 0.0f) || !(target_peak > 0.0f) || !(source_peak > target_peak)) {
+    return false;
+  }
+  // BT.2390 works on PQ values normalized to the source range. The source
+  // black is PQ zero: displays clip below their own black anyway, and the
+  // optional black lift would raise every LCD's blacks.
+  const float source_pq = st2084_pq_eval_inverse_eotf(fminf(source_peak, 10000.0f) / 10000.0f);
+  const float max_lum = st2084_pq_eval_inverse_eotf(target_peak / 10000.0f) / source_pq;
+  params[0] = unit_nits;
+  params[1] = source_pq;
+  params[2] = fmaxf(1.5f * max_lum - 0.5f, 0.0f);
+  params[3] = max_lum;
+  return true;
+}
+
+float color_tone_map_bt2390_eval(const float params[static 4], float value) {
+  if (!(value > 0.0f)) {
+    return value;
+  }
+  const float ks = params[2];
+  const float max_lum = params[3];
+  float e = st2084_pq_eval_inverse_eotf(value * params[0] / 10000.0f) / params[1];
+  if (e <= ks) {
+    return value;
+  }
+  // Hermite spline from the knee to the target peak, BT.2390-11 section 5.4.
+  const float t = (fminf(e, 1.0f) - ks) / (1.0f - ks);
+  const float t2 = t * t;
+  const float t3 = t2 * t;
+  e = (2.0f * t3 - 3.0f * t2 + 1.0f) * ks + (t3 - 2.0f * t2 + t) * (1.0f - ks) + (-2.0f * t3 + 3.0f * t2) * max_lum;
+  return st2084_pq_eval_eotf(e * params[1]) * 10000.0f / params[0];
+}
+
 void color_primaries_transform_relative_colorimetric(
     const struct wlr_color_primaries* source, const struct wlr_color_primaries* destination, float matrix[static 9]
 ) {

@@ -294,6 +294,8 @@ bool link_tex_program(struct tex_shader* shader, enum fx_tex_shader_source sourc
   shader->source_luminances = glGetUniformLocation(prog, "source_luminances");
   shader->target_tf = glGetUniformLocation(prog, "target_tf");
   shader->map_hdr_to_sdr = glGetUniformLocation(prog, "map_hdr_to_sdr");
+  shader->tone_map = glGetUniformLocation(prog, "tone_map");
+  shader->tone_map_params = glGetUniformLocation(prog, "tone_map_params");
   shader->pos_attrib = glGetAttribLocation(prog, "pos");
   shader->tex_proj = glGetUniformLocation(prog, "tex_proj");
 

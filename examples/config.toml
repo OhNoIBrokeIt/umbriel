@@ -72,6 +72,8 @@ files = []
 # vrr = "fullscreen"
 # hdr = "auto"
 # sdr_transfer = "gamma22" # Or "srgb" for piecewise SDR decoding in HDR.
+# tone_mapping = "bt2390" # Or "off" to send HDR highlights unmapped.
+# peak_luminance = 1000 # Display peak in cd/m², replacing the EDID value.
 
 # ==============================================================================
 # Appearance

@@ -1073,6 +1073,7 @@ namespace umbriel {
           : wlr_color_luminances{};
       state->absolute_luminance = description.absoluteLuminance;
       state->luminance_multiplier = description.luminanceMultiplier;
+      state->content_peak_luminance = colorDescriptionContentPeak(description);
     }
 
     // Color-object destruction is immediate and need not be followed by a
@@ -1107,6 +1108,7 @@ namespace umbriel {
           .custom_primaries = nullptr,
           .luminances = {},
           .absolute_luminance = false,
+          .content_peak_luminance = 0.0F,
       };
       resolveSurfaceColor(surface, &state, const_cast<Impl*>(this));
       wlr_scene_buffer_set_transfer_function(buffer, state.transfer_function);
@@ -1114,6 +1116,7 @@ namespace umbriel {
       wlr_scene_buffer_set_custom_primaries(buffer, state.custom_primaries);
       wlr_scene_buffer_set_luminances(buffer, &state.luminances, state.absolute_luminance);
       wlr_scene_buffer_set_luminance_multiplier(buffer, state.luminance_multiplier);
+      wlr_scene_buffer_set_content_peak_luminance(buffer, state.content_peak_luminance);
     }
 
     Server& server;

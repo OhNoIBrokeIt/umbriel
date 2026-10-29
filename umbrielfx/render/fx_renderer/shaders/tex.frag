@@ -31,6 +31,9 @@ uniform float lum_multiplier;
 uniform vec2 source_luminances;
 uniform int target_tf;
 uniform bool map_hdr_to_sdr;
+// BT.2390 EETF: {nits of linear 1.0, PQ(source peak), knee start, normalized target peak}.
+uniform bool tone_map;
+uniform vec4 tone_map_params;
 
 #define TRANSFER_FUNCTION_PASSTHROUGH 0
 #define TRANSFER_FUNCTION_SRGB 1
@@ -131,6 +134,48 @@ vec3 hdr_to_sdr(vec3 color) {
   return color * (mapped_peak / peak);
 }
 
+float nits_to_pq(float nits) {
+  const float c1 = 0.8359375;
+  const float c2 = 18.8515625;
+  const float c3 = 18.6875;
+  const float m = 78.84375;
+  const float n = 0.1593017578125;
+  float pow_n = pow(clamp(nits / 10000.0, 0.0, 1.0), n);
+  return pow((c1 + c2 * pow_n) / (1.0 + c3 * pow_n), m);
+}
+
+float pq_to_nits(float pq) {
+  const float c1 = 0.8359375;
+  const float c2 = 18.8515625;
+  const float c3 = 18.6875;
+  const float m = 78.84375;
+  const float n = 0.1593017578125;
+  float p = pow(max(pq, 0.0), 1.0 / m);
+  return pow(max(p - c1, 0.0) / (c2 - c3 * p), 1.0 / n) * 10000.0;
+}
+
+// ITU-R BT.2390 EETF on the largest channel. Scaling the triplet by the
+// mapped peak keeps hue and saturation instead of desaturating per channel.
+// Mirrors color_tone_map_bt2390_eval().
+vec3 tone_map_bt2390(vec3 color) {
+  float peak = max(max(color.r, color.g), color.b);
+  if (peak <= 0.0) {
+    return color;
+  }
+  float ks = tone_map_params.z;
+  float max_lum = tone_map_params.w;
+  float e = nits_to_pq(peak * tone_map_params.x) / tone_map_params.y;
+  if (e <= ks) {
+    return color;
+  }
+  float t = (min(e, 1.0) - ks) / (1.0 - ks);
+  float t2 = t * t;
+  float t3 = t2 * t;
+  e = (2.0 * t3 - 3.0 * t2 + 1.0) * ks + (t3 - 2.0 * t2 + t) * (1.0 - ks) + (-2.0 * t3 + 3.0 * t2) * max_lum;
+  float mapped = pq_to_nits(e * tone_map_params.y) / tone_map_params.x;
+  return color * (mapped / peak);
+}
+
 vec4 convert_color(vec4 color) {
   if (source_tf == TRANSFER_FUNCTION_PASSTHROUGH) {
     return color;
@@ -155,6 +200,9 @@ vec4 convert_color(vec4 color) {
   }
 
   rgb *= lum_multiplier;
+  if (tone_map) {
+    rgb = tone_map_bt2390(rgb);
+  }
   rgb = primaries_matrix * rgb;
   if (map_hdr_to_sdr) {
     rgb = hdr_to_sdr(rgb);

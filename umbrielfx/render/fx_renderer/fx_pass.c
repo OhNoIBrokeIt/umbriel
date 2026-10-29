@@ -2064,8 +2064,11 @@ void fx_render_pass_add_texture(struct fx_gles_render_pass* pass, const struct f
   }
   const enum wlr_color_transfer_function target_tf =
       pass->has_color_transform ? WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR : pass->sdr_tf;
-  const bool color_passthrough =
-      source_tf == target_tf && primaries_passthrough && lum_multiplier == 1.0F && !fx_options->map_hdr_to_sdr;
+  const bool color_passthrough = source_tf == target_tf
+      && primaries_passthrough
+      && lum_multiplier == 1.0F
+      && !fx_options->map_hdr_to_sdr
+      && !fx_options->tone_map;
 
   float primaries_matrix[9];
   if (primaries_passthrough) {
@@ -2083,7 +2086,11 @@ void fx_render_pass_add_texture(struct fx_gles_render_pass* pass, const struct f
       fx_options->luminances != NULL ? fx_options->luminances->max : 100.0F
   );
   glUniform1i(shader->target_tf, color_passthrough ? 0 : target_tf);
-  glUniform1i(shader->map_hdr_to_sdr, fx_options->map_hdr_to_sdr);
+  glUniform1i(shader->map_hdr_to_sdr, fx_options->map_hdr_to_sdr && !fx_options->tone_map);
+  glUniform1i(shader->tone_map, fx_options->tone_map);
+  if (fx_options->tone_map) {
+    glUniform4fv(shader->tone_map_params, 1, fx_options->tone_map_params);
+  }
 
   glUniform1f(shader->discard_transparent, fx_options->discard_transparent);
   if (use_clamp) {
@@ -2815,7 +2822,8 @@ blur_composite_is_copy(const struct fx_gles_render_pass* pass, const struct fx_r
           || base->transfer_function == 0
           || base->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_SRGB)
       && (base->primaries == NULL || color_primaries_equal(base->primaries, &srgb))
-      && (base->luminance_multiplier == NULL || *base->luminance_multiplier == 1.0F);
+      && (base->luminance_multiplier == NULL || *base->luminance_multiplier == 1.0F)
+      && !options->tone_map;
 }
 
 // Draws the final blur upsample from the half-resolution level straight into

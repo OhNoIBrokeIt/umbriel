@@ -143,6 +143,8 @@ struct tex_shader {
   GLint source_luminances;
   GLint target_tf;
   GLint map_hdr_to_sdr;
+  GLint tone_map;
+  GLint tone_map_params;
   GLint pos_attrib;
 
   GLint discard_transparent;

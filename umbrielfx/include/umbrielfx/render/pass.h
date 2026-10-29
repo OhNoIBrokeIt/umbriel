@@ -134,6 +134,11 @@ struct fx_render_texture_options {
   // Compress HDR highlights into the SDR range before blending this content.
   // Intermediate textures leave this unset so a scene is not mapped twice.
   bool map_hdr_to_sdr;
+  // Apply the BT.2390 EETF before blending, with parameters from
+  // color_tone_map_bt2390_params(). Takes precedence over map_hdr_to_sdr.
+  // Intermediate textures leave this unset so a scene is not mapped twice.
+  bool tone_map;
+  float tone_map_params[4];
 };
 
 struct fx_render_rect_options {

@@ -2902,12 +2902,24 @@ void wlr_scene_buffer_set_luminances(
   scene_node_update(&scene_buffer->node, NULL);
 }
 
+void wlr_scene_buffer_set_content_peak_luminance(struct wlr_scene_buffer* scene_buffer, float nits) {
+  if (!isfinite(nits) || nits < 0.0f) {
+    nits = 0.0f;
+  }
+  if (scene_buffer->content_peak_luminance == nits) {
+    return;
+  }
+  scene_buffer->content_peak_luminance = nits;
+  scene_node_update(&scene_buffer->node, NULL);
+}
+
 void wlr_scene_buffer_copy_color(struct wlr_scene_buffer* dst, const struct wlr_scene_buffer* src) {
   wlr_scene_buffer_set_transfer_function(dst, src->transfer_function);
   wlr_scene_buffer_set_primaries(dst, src->primaries);
   wlr_scene_buffer_set_custom_primaries(dst, src->has_custom_primaries ? &src->custom_primaries : NULL);
   wlr_scene_buffer_set_luminances(dst, &src->luminances, src->absolute_luminance);
   wlr_scene_buffer_set_luminance_multiplier(dst, src->luminance_multiplier);
+  wlr_scene_buffer_set_content_peak_luminance(dst, src->content_peak_luminance);
   wlr_scene_buffer_set_color_encoding(dst, src->color_encoding);
   wlr_scene_buffer_set_color_range(dst, src->color_range);
 }
@@ -3262,6 +3274,76 @@ get_luminance_multiplier(const struct wlr_color_luminances* src_lum, const struc
   return (dst_lum->reference / src_lum->reference) * (src_lum->max / dst_lum->max);
 }
 
+// HDR10 content without metadata is commonly mastered for 1000 cd/m².
+#define DEFAULT_PQ_CONTENT_PEAK 1000.0f
+// Content within this factor of the target is left alone. Peaks that differ
+// only by rounding or panel variance (1015 against 1000 cd/m²) would
+// otherwise receive a compression too small to see but still measurable.
+#define TONE_MAP_MARGIN 1.05f
+
+static void scene_buffer_source_luminances(
+    const struct wlr_scene_output* scene_output, const struct wlr_scene_buffer* scene_buffer,
+    struct wlr_color_luminances* src_lum
+) {
+  enum wlr_color_transfer_function source_tf = scene_buffer->transfer_function;
+  if (source_tf == 0) {
+    source_tf = WLR_COLOR_TRANSFER_FUNCTION_SRGB;
+  }
+  wlr_color_transfer_function_get_default_luminance(source_tf, src_lum);
+  if (scene_buffer->luminances.reference > 0.0f) {
+    *src_lum = scene_buffer->luminances;
+  }
+  if (scene_buffer->luminances.reference == 0.0f
+      && scene_buffer->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ
+      && scene_output->sdr_white_level > 0.0f) {
+    src_lum->reference = scene_output->sdr_white_level;
+  }
+}
+
+// BT.2390 parameters for drawing this buffer on the output, in the blend space
+// where 1.0 is SDR white. Returns false when the content needs no mapping.
+static bool scene_buffer_tone_map_params(
+    const struct wlr_scene_output* scene_output, const struct wlr_scene_buffer* scene_buffer, bool hdr,
+    float params[static 4]
+) {
+  if (!scene_output->tone_mapping) {
+    return false;
+  }
+  const bool pq = scene_buffer->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ;
+  float peak = scene_buffer->content_peak_luminance;
+  struct wlr_color_luminances src_lum;
+  scene_buffer_source_luminances(scene_output, scene_buffer, &src_lum);
+
+  if (hdr) {
+    if (peak <= 0.0f && pq) {
+      peak = DEFAULT_PQ_CONTENT_PEAK;
+    }
+    const float unit = scene_output->sdr_white_level;
+    if (peak <= 0.0f || unit <= 0.0f || src_lum.reference <= 0.0f) {
+      return false;
+    }
+    // Relative content shows its reference white at SDR white; absolute
+    // (Windows scRGB) content keeps its own luminance.
+    const float shown_peak = scene_buffer->absolute_luminance ? peak : peak * unit / src_lum.reference;
+    const float target_peak = scene_output->tone_mapping_target_peak;
+    if (shown_peak <= target_peak * TONE_MAP_MARGIN) {
+      return false;
+    }
+    return color_tone_map_bt2390_params(unit, shown_peak, target_peak, params);
+  }
+
+  // On SDR outputs only PQ content that states its peak is mapped. Everything
+  // else keeps the metadata-free highlight shoulder.
+  if (!pq
+      || peak <= 0.0f
+      || scene_buffer->absolute_luminance
+      || src_lum.reference <= 0.0f
+      || peak <= src_lum.reference * TONE_MAP_MARGIN) {
+    return false;
+  }
+  return color_tone_map_bt2390_params(src_lum.reference, peak, src_lum.reference, params);
+}
+
 static const void* workspace_group(struct wlr_scene_node* node) {
   for (; node != NULL; node = node->parent != NULL ? &node->parent->node : NULL) {
     struct scene_animation* animation = scene_animation_get(node);
@@ -3507,15 +3589,9 @@ static void scene_entry_render(struct render_list_entry* entry, const struct ren
     if (source_tf == 0) {
       source_tf = WLR_COLOR_TRANSFER_FUNCTION_SRGB;
     }
-    wlr_color_transfer_function_get_default_luminance(source_tf, &src_lum);
-    if (scene_buffer->luminances.reference > 0.0f) {
-      src_lum = scene_buffer->luminances;
-    }
-    if (scene_buffer->luminances.reference == 0.0f
-        && scene_buffer->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ
-        && data->output->sdr_white_level > 0.0f) {
-      src_lum.reference = data->output->sdr_white_level;
-    }
+    scene_buffer_source_luminances(data->output, scene_buffer, &src_lum);
+    float tone_map_params[4] = {0};
+    const bool tone_map = scene_buffer_tone_map_params(data->output, scene_buffer, data->hdr, tone_map_params);
     wlr_color_transfer_function_get_default_luminance(WLR_COLOR_TRANSFER_FUNCTION_SRGB, &srgb_lum);
     // Custom descriptions anchor their black at blend zero and reference white
     // at blend one. Keep the established default conversion for named content.
@@ -3635,6 +3711,8 @@ static void scene_entry_render(struct render_list_entry* entry, const struct ren
             && (source_tf == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ
                 || scene_buffer->absolute_luminance
                 || src_lum.max > src_lum.reference),
+        .tone_map = tone_map,
+        .tone_map_params = {tone_map_params[0], tone_map_params[1], tone_map_params[2], tone_map_params[3]},
     };
 
     // TODO: Use the base wlr_render_pass_add_texture as a fast-path in the future
@@ -5170,6 +5248,18 @@ static void scene_output_dirty_optimized_blur(struct wlr_scene_output* output, s
   }
 }
 
+void wlr_scene_output_set_tone_mapping(struct wlr_scene_output* scene_output, bool enabled, float target_peak) {
+  assert(isfinite(target_peak) && target_peak >= 0.0f);
+  if (scene_output->tone_mapping == enabled && scene_output->tone_mapping_target_peak == target_peak) {
+    return;
+  }
+  scene_output->tone_mapping = enabled;
+  scene_output->tone_mapping_target_peak = target_peak;
+  fx_offscreen_buffers_invalidate_blend(scene_output->output);
+  scene_output_dirty_optimized_blur(scene_output, &scene_output->scene->tree.node);
+  scene_output_damage_whole(scene_output);
+}
+
 bool wlr_scene_output_set_sdr_transfer_function(
     struct wlr_scene_output* scene_output, enum wlr_color_transfer_function transfer_function
 ) {
@@ -5499,6 +5589,13 @@ static enum scene_direct_scanout_result scene_entry_try_direct_scanout(
 
   const struct wlr_output_image_description* img_desc = output_pending_image_description(scene_output->output, state);
   if (!color_management_is_scanout_allowed(img_desc, buffer)) {
+    *status = WLR_SCENE_DIRECT_SCANOUT_COLOR;
+    return SCANOUT_INELIGIBLE;
+  }
+  // Scanout would hand the display highlights beyond its peak unmapped.
+  float tone_map_params[4];
+  const bool hdr = img_desc != NULL && img_desc->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ;
+  if (scene_buffer_tone_map_params(scene_output, buffer, hdr, tone_map_params)) {
     *status = WLR_SCENE_DIRECT_SCANOUT_COLOR;
     return SCANOUT_INELIGIBLE;
   }

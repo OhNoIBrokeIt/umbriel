@@ -274,6 +274,10 @@ namespace umbriel {
     Gamma22,
     Srgb,
   };
+  enum class ToneMapping {
+    Bt2390,
+    Off,
+  };
   [[nodiscard]] constexpr std::string_view hdrModeName(HdrMode mode) {
     switch (mode) {
     case HdrMode::Off:
@@ -323,6 +327,10 @@ namespace umbriel {
     HdrMode hdr = HdrMode::Off;
     float sdrWhite = 203.0F;
     SdrTransfer sdrTransfer = SdrTransfer::Gamma22;
+    ToneMapping toneMapping = ToneMapping::Bt2390;
+    // Display peak in cd/m² for HDR. Replaces the EDID value, which many
+    // displays report for a single brightness mode or leave out entirely.
+    std::optional<double> peakLuminance;
     std::optional<std::string> screenEffect; // "off" disables the default
     // Render bit depth for SDR output: 8 (default) or 10 for 10-bit SDR.
     int bitDepth = 8;

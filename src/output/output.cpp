@@ -415,7 +415,7 @@ namespace umbriel {
     wlr_output_state_init(&state);
     state.allow_reconfiguration = true;
     wlr_output_state_set_color_transform(&state, nullptr);
-    const auto description = makeHdrOutputDescription(m_output->default_primaries, m_hdrStaticMetadata);
+    const auto description = makeHdrOutputDescription(m_output->default_primaries, effectiveHdrMetadata());
     if (wlr_output_state_set_image_description(&state, &description)) {
       m_hdrAvailable = selectHdrRenderFormat(m_output->render_format, [&](uint32_t format) {
                          if (formats != nullptr && wlr_drm_format_set_get(formats, format) == nullptr) {
@@ -457,6 +457,16 @@ namespace umbriel {
   SdrTransfer Output::configuredSdrTransfer() const {
     const OutputRule* rule = findOutputRule(config(), identity());
     return rule != nullptr ? rule->sdrTransfer : SdrTransfer::Gamma22;
+  }
+
+  ToneMapping Output::configuredToneMapping() const {
+    const OutputRule* rule = findOutputRule(config(), identity());
+    return rule != nullptr ? rule->toneMapping : ToneMapping::Bt2390;
+  }
+
+  std::optional<HdrStaticMetadata> Output::effectiveHdrMetadata() const {
+    const OutputRule* rule = findOutputRule(config(), identity());
+    return applyPeakLuminanceOverride(m_hdrStaticMetadata, rule != nullptr ? rule->peakLuminance : std::nullopt);
   }
 
   void Output::setRuntimeSdrWhite(float nits) {
@@ -574,7 +584,19 @@ namespace umbriel {
     }
     const float level = hdrActive() ? sdrWhite() : 0.0F;
     wlr_scene_output_set_sdr_white_level(m_sceneOutput, level);
+    updateSceneToneMapping(hdrActive());
     updateSceneHdrWhitePoint(wlr_gamma_control_manager_v1_get_control(m_server->gammaManager(), m_output));
+  }
+
+  void Output::updateSceneToneMapping(bool hdr) {
+    if (m_sceneOutput == nullptr) {
+      return;
+    }
+    // Without a known display peak, HDR content stays unmapped and the
+    // display applies its own tone mapping.
+    const auto metadata = effectiveHdrMetadata();
+    const float peak = hdr && metadata ? static_cast<float>(metadata->maxLuminance) : 0.0F;
+    wlr_scene_output_set_tone_mapping(m_sceneOutput, configuredToneMapping() == ToneMapping::Bt2390, peak);
   }
 
   void Output::updateSceneHdrWhitePoint(wlr_gamma_control_v1* control) {
@@ -690,7 +712,7 @@ namespace umbriel {
       } else if (!m_server->renderer()->features.output_color_transform) {
         earlyHdrFail = "renderer lacks FP16 output transform";
       } else {
-        hdrDescription = makeHdrOutputDescription(m_output->default_primaries, m_hdrStaticMetadata);
+        hdrDescription = makeHdrOutputDescription(m_output->default_primaries, effectiveHdrMetadata());
 
         if (!wlr_output_state_set_image_description(&state, &hdrDescription)) {
           earlyHdrFail = "failed to stage HDR image description";
@@ -787,6 +809,7 @@ namespace umbriel {
       const auto commitStagedState = [&]() -> FormatCommitResult {
         const bool targetHdr = state.image_description != nullptr;
         wlr_scene_output_set_sdr_white_level(m_sceneOutput, targetHdr ? sdrWhite() : 0.0F);
+        updateSceneToneMapping(targetHdr);
         wlr_damage_ring_add_whole(&m_sceneOutput->damage_ring);
         // The cache may need a new size, format or SDR curve; re-render it in this frame.
         markBlurBackgroundDirty();

@@ -35,6 +35,13 @@ namespace umbriel {
   // the client also supplies HDR mastering luminance.
   [[nodiscard]] bool colorDescriptionRequestsHdrOutput(const ColorDescription& description);
 
+  // Brightest content light in cd/m², from MaxCLL and the mastering peak. The
+  // smaller one wins when both are present, since MaxCLL above the mastering
+  // display's peak is not meaningful. Placeholder values are ignored: the PQ
+  // ceiling of 10000 cd/m², and a value that repeats the encoding's own
+  // luminance range rather than describing the content. Zero means unknown.
+  [[nodiscard]] float colorDescriptionContentPeak(const ColorDescription& description);
+
   // Automatic HDR offers a PQ encoding before scanout switches. Its target
   // volume still describes the current output, independently of that encoding.
   [[nodiscard]] ColorDescription outputColorDescription(

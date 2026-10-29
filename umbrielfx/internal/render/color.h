@@ -104,6 +104,22 @@ void wlr_color_primaries_to_xyz(const struct wlr_color_primaries* primaries, flo
 void color_transform_sdr_white_point_matrix(float matrix[static 9], const float white[static 3]);
 
 /**
+ * Precompute the shader parameters of the ITU-R BT.2390 EETF.
+ *
+ * `unit_nits` is the luminance of linear value 1.0 in the space the curve is
+ * applied in. `source_peak` and `target_peak` are in cd/m². The result holds
+ * {unit_nits, PQ(source_peak), knee start, normalized target peak}. Returns
+ * false, leaving `params` untouched, when the source already fits the target.
+ */
+bool color_tone_map_bt2390_params(float unit_nits, float source_peak, float target_peak, float params[static 4]);
+
+/**
+ * Evaluate the BT.2390 EETF for one linear value, mirroring the texture
+ * shader. Values at or below the knee are returned unchanged.
+ */
+float color_tone_map_bt2390_eval(const float params[static 4], float value);
+
+/**
  * Convert linear RGB between primary sets with Bradford white adaptation.
  * Equal white points retain the absolute-colorimetric conversion unchanged.
  */

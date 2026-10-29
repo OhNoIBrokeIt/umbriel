@@ -51,6 +51,8 @@ namespace umbriel {
           && lhs.hdr == rhs.hdr
           && lhs.sdrWhite == rhs.sdrWhite
           && lhs.sdrTransfer == rhs.sdrTransfer
+          && lhs.toneMapping == rhs.toneMapping
+          && lhs.peakLuminance == rhs.peakLuminance
           && lhs.bitDepth == rhs.bitDepth;
     }
 

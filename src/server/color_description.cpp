@@ -1,5 +1,6 @@
 #include "server/color_description.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace umbriel {
@@ -74,6 +75,23 @@ namespace umbriel {
             || static_cast<float>(description.data.max_cll) > description.luminances.reference
             || (description.data.has_mastering_luminance
                 && description.data.mastering_luminance.max > description.luminances.reference));
+  }
+
+  float colorDescriptionContentPeak(const ColorDescription& description) {
+    // Engines and translation layers often fill in the format's range when
+    // they know nothing about the content. Mapping such a peak would compress
+    // an image the application has already tone mapped.
+    const auto measured = [&](float value) {
+      constexpr float kPqCeiling = 10000.0F;
+      return value > 0.0F && value < kPqCeiling && value != description.luminances.max ? value : 0.0F;
+    };
+    const float maxCll = measured(static_cast<float>(description.data.max_cll));
+    const float mastering =
+        description.data.has_mastering_luminance ? measured(description.data.mastering_luminance.max) : 0.0F;
+    if (maxCll > 0.0F && mastering > 0.0F) {
+      return std::min(maxCll, mastering);
+    }
+    return std::max(maxCll, mastering);
   }
 
   ColorDescription outputColorDescription(

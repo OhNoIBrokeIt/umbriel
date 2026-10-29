@@ -43,6 +43,8 @@ Umbriel first uses the first remaining enabled output in its internal output ord
 | `hdr`                                      | string                            | `"off"`      | HDR activation policy.                                                                          |
 | `sdr_white`                                | float                             | `203`        | SDR reference white in cd/m² while HDR is active.                                               |
 | `sdr_transfer`                             | string                            | `"gamma22"`  | Transfer curve for untagged SDR on HDR outputs: `"gamma22"` or `"srgb"`.                        |
+| `tone_mapping`                             | string                            | `"bt2390"`   | HDR highlight mapping: `"bt2390"` or `"off"`.                                                   |
+| `peak_luminance`                           | float                             | EDID         | Display peak in cd/m² for HDR, replacing the EDID value.                                        |
 | `bit_depth`                                | int                               | `8`          | Render bit depth for SDR output: `8` or `10`.                                                   |
 | `workspaces`                               | int, string array, or `"dynamic"` | `"dynamic"`  | Workspace inventory for this output.                                                            |
 | `min_workspaces`                           | int                               | `1`          | Minimum count for a dynamic output.                                                             |
@@ -259,6 +261,24 @@ Some native Wayland Proton builds require `PROTON_ENABLE_WAYLAND=1` and `DXVK_HD
 On a native DRM output, Umbriel reads the display's CTA HDR static metadata from its EDID. The display primaries, desired minimum and maximum content luminance, and desired maximum frame-average luminance are included in the BT.2020 PQ output description. This gives the display a valid mastering range, MaxCLL, and MaxFALL for its own tone mapping. Umbriel leaves any value omitted by the EDID undefined instead of guessing a brightness that may be wrong for the panel. Nested and virtual outputs have no display EDID, so their luminance metadata remains undefined.
 
 These display limits describe the target color volume independently of `sdr_white`, which describes SDR reference white within the HDR encoding.
+
+#### Tone mapping
+
+With `tone_mapping = "bt2390"`, the default, HDR content brighter than the display is mapped into its range with the ITU-R BT.2390 EETF instead of reaching the display unmapped. Shadows and midtones stay exact. Highlights above a knee roll off smoothly so that the content's peak lands on the display's peak, and channel ratios are kept, so bright colors keep their hue instead of clipping to white.
+
+The content peak comes from the application's HDR metadata: MaxCLL, or the mastering display peak, whichever is lower when both are present. Placeholder values are ignored: the PQ ceiling of 10000 cd/m², and a peak that only repeats the encoding's own luminance range. Games and translation layers often send these while already tone mapping to the advertised display peak. PQ content without a usable peak is treated as 1000 cd/m², the common HDR10 mastering level, and other content without one is left unmapped. Content that already fits the display, or exceeds it by 5% or less, is left untouched, so an application that tone maps to the advertised target, such as mpv with `gpu-next`, is not mapped a second time. A fullscreen window that needs mapping is composited rather than scanned out directly, since direct scanout would bypass the mapping.
+
+The display peak is the EDID's desired maximum content luminance. Many displays report a value for only one of their brightness modes, or none at all, so `peak_luminance` replaces it:
+
+```toml
+[output.DP-1]
+hdr = "auto"
+peak_luminance = 1000 # Measured or specified peak of the active display mode
+```
+
+The same peak is advertised to applications as the target color volume and sent to the display as mastering metadata, so applications, Umbriel and the display agree on one range. Without a display peak from either source, HDR content is left to the display's own tone mapping.
+
+On SDR outputs, PQ content that declares its peak is mapped with the same curve, its peak reaching SDR white. Other HDR content on SDR outputs keeps the metadata-free highlight compression described above. Set `tone_mapping = "off"` to restore unmapped HDR output and the highlight compression for all SDR fallback. `umbriel color` reports the active setting and display peak.
 
 Run `umbriel color` to inspect the metadata in the active output description. The JSON form reports `mastering_display_primaries`, `mastering_luminance`, `max_cll`, and `max_fall` for each output. For surfaces with explicit primary coordinates, `primaries` reports `"custom"`.
 

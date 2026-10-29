@@ -209,6 +209,8 @@ if build_tests
     'scene-custom-bt1886',
     'scene-scrgb-absolute-luminance',
     'scene-hdr-sdr-fallback',
+    'scene-tone-map-bt2390',
+    'tone-map-bt2390-math',
     'hdr-white-point-math',
     'hdr-white-point',
     'sdr-white-point-alpha',

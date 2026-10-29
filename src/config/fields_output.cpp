@@ -144,6 +144,11 @@ namespace umbriel {
               "sdr_transfer", &O::sdrTransfer,
               {{.name = "gamma22", .value = SdrTransfer::Gamma22}, {.name = "srgb", .value = SdrTransfer::Srgb}}
           ),
+          registry::choice(
+              "tone_mapping", &O::toneMapping,
+              {{.name = "bt2390", .value = ToneMapping::Bt2390}, {.name = "off", .value = ToneMapping::Off}}
+          ),
+          registry::real("peak_luminance", 100.0, 10000.0, &O::peakLuminance),
           custom<O>(
               "bit_depth", KeyDescription("int").withRange(8, 10),
               [](const toml::node& node, const std::string& path, O& target, registry::ReadContext&) {

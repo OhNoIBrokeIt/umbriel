@@ -25,6 +25,7 @@ using umbriel::LayoutMode;
 using umbriel::ModifierKey;
 using umbriel::ModRightDoubleClick;
 using umbriel::SdrTransfer;
+using umbriel::ToneMapping;
 using umbriel::TrackLayout;
 using umbriel::VrrMode;
 using umbriel::WindowDragToggle;
@@ -1648,6 +1649,34 @@ UMBRIEL_TEST(outputSdrTransferLoadsAndResetsToGamma22) {
   file.write("[output.DP-1]\n");
   CHECK(store.reload().success);
   CHECK(store.config().outputs[0].sdrTransfer == SdrTransfer::Gamma22);
+}
+
+UMBRIEL_TEST(outputToneMappingAndPeakLuminanceLoadAndReset) {
+  const TempConfig file;
+  ConfigStore& store = umbriel::configStore();
+  store.setRootPath(file.path(), true);
+
+  file.write("[output.DP-1]\n");
+  CHECK(store.reload().success);
+  CHECK(store.config().outputs[0].toneMapping == ToneMapping::Bt2390);
+  CHECK(!store.config().outputs[0].peakLuminance.has_value());
+
+  file.write("[output.DP-1]\ntone_mapping = \"off\"\npeak_luminance = 1000\n");
+  CHECK(store.reload().success);
+  CHECK(store.config().outputs[0].toneMapping == ToneMapping::Off);
+  CHECK(store.config().outputs[0].peakLuminance == std::optional<double>(1000.0));
+  CHECK(!containsDiagnostic(store, "output.DP-1.tone_mapping"));
+  CHECK(!containsDiagnostic(store, "output.DP-1.peak_luminance"));
+
+  file.write("[output.DP-1]\npeak_luminance = 20\n");
+  CHECK(store.reload().success);
+  CHECK(containsDiagnostic(store, "output.DP-1.peak_luminance"));
+  CHECK(!containsDiagnostic(store, "unknown key"));
+
+  file.write("[output.DP-1]\n");
+  CHECK(store.reload().success);
+  CHECK(store.config().outputs[0].toneMapping == ToneMapping::Bt2390);
+  CHECK(!store.config().outputs[0].peakLuminance.has_value());
 }
 
 UMBRIEL_TEST(outputSdrTransferRejectsInvalidValuesWithoutUnknownKeyWarnings) {

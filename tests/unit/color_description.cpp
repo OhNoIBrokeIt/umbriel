@@ -281,4 +281,47 @@ UMBRIEL_TEST(preferredDescriptionComparisonIncludesReferenceWhiteAndTargetMetada
   }
 }
 
+UMBRIEL_TEST(contentPeakPrefersSmallerOfMaxCllAndMasteringPeak) {
+  umbriel::ColorDescription description;
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 0.0F);
+
+  description.data.max_cll = 800;
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 800.0F);
+
+  description.data.has_mastering_luminance = true;
+  description.data.mastering_luminance = {.min = 0.005F, .max = 1000.0F};
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 800.0F);
+
+  description.data.max_cll = 4000;
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 1000.0F);
+
+  description.data.max_cll = 0;
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 1000.0F);
+}
+
+UMBRIEL_TEST(contentPeakIgnoresPlaceholderValues) {
+  umbriel::ColorDescription description;
+  description.data.tf_named = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ;
+  description.luminances = umbriel::defaultColorLuminances(description.data.tf_named);
+
+  // The PQ ceiling says nothing about the content.
+  description.data.max_cll = 10000;
+  description.data.has_mastering_luminance = true;
+  description.data.mastering_luminance = {.min = 0.0F, .max = 10000.0F};
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 0.0F);
+
+  // A real MaxCLL still counts when the mastering peak is a placeholder.
+  description.data.max_cll = 1000;
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 1000.0F);
+
+  // A peak that repeats the encoding's luminance range is not a measurement.
+  description.data.max_cll = 0;
+  description.customLuminances = true;
+  description.luminances = {.min = 0.0F, .max = 4000.0F, .reference = 203.0F};
+  description.data.mastering_luminance = {.min = 0.0F, .max = 4000.0F};
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 0.0F);
+  description.data.mastering_luminance = {.min = 0.0F, .max = 1500.0F};
+  CHECK_EQ(umbriel::colorDescriptionContentPeak(description), 1500.0F);
+}
+
 int main() { return RUN_TESTS(); }

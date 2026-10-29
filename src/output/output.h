@@ -37,6 +37,7 @@ namespace umbriel {
   enum class FormatTier : uint8_t;
   enum class HdrMode;
   enum class SdrTransfer;
+  enum class ToneMapping;
   class Server;
   class View;
   class WorkspaceGroup;
@@ -120,6 +121,9 @@ namespace umbriel {
     [[nodiscard]] float configuredSdrWhite() const;
     [[nodiscard]] float sdrWhite() const;
     [[nodiscard]] SdrTransfer configuredSdrTransfer() const;
+    [[nodiscard]] ToneMapping configuredToneMapping() const;
+    // EDID HDR metadata with the configured peak_luminance override applied.
+    [[nodiscard]] std::optional<HdrStaticMetadata> effectiveHdrMetadata() const;
     void setRuntimeSdrWhite(float nits);
     [[nodiscard]] int configuredBitDepth() const;
     [[nodiscard]] const std::string& bitDepthFallbackReason() const { return m_bitDepthFallbackReason; }
@@ -220,6 +224,7 @@ namespace umbriel {
     void setHdrFallbackReason(std::string_view reason);
     void setBitDepthFallbackReason(std::string_view reason);
     void updateSceneSdrWhite();
+    void updateSceneToneMapping(bool hdr);
     void updateSceneHdrWhitePoint(wlr_gamma_control_v1* control);
     void armFrameRetry();
     [[nodiscard]] DirectScanoutState builtDirectScanout() const;
