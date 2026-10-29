@@ -362,7 +362,7 @@ static bool egl_init_display(struct wlr_egl* egl, EGLDisplay display, bool allow
 
   egl->exts.IMG_context_priority = check_egl_ext(display_exts_str, "EGL_IMG_context_priority");
 
-  egl->exts.KHR_context_flush_control = check_egl_ext(display_exts_str, "EGL_KHR_context_flush_control");
+  egl->KHR_context_flush_control = check_egl_ext(display_exts_str, "EGL_KHR_context_flush_control");
 
   wlr_log(WLR_INFO, "Using EGL %d.%d", (int)major, (int)minor);
   wlr_log(WLR_INFO, "Supported EGL display extensions: %s", display_exts_str);
@@ -432,7 +432,7 @@ static bool egl_init(struct wlr_egl* egl, EGLenum platform, void* remote_display
   }
 
   // Disable implicit flushes when releasing the context to reduce overhead.
-  if (egl->exts.KHR_context_flush_control) {
+  if (egl->KHR_context_flush_control) {
     attribs[atti++] = EGL_CONTEXT_RELEASE_BEHAVIOR_KHR;
     attribs[atti++] = EGL_CONTEXT_RELEASE_BEHAVIOR_NONE_KHR;
   }

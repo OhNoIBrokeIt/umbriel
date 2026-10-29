@@ -21,7 +21,6 @@ struct wlr_egl {
     bool EXT_image_dma_buf_import_modifiers;
     bool IMG_context_priority;
     bool EXT_create_context_robustness;
-    bool KHR_context_flush_control;
 
     // Device extensions
     bool EXT_device_drm;
@@ -54,11 +53,14 @@ struct wlr_egl {
   struct wlr_drm_format_set dmabuf_texture_formats;
   struct wlr_drm_format_set dmabuf_render_formats;
 
-  // Keep additions after the fields read by wlroots' GLES2 renderer.
+  // Keep additions after the fields read by wlroots' GLES2 renderer. Every
+  // field above must match wlroots' struct wlr_egl exactly, including the
+  // extension flags, which wlroots' own EGL functions read.
   enum wlr_egl_drm_fd_strategy drm_fd_strategy;
   PFNEGLCLIENTWAITSYNCKHRPROC eglClientWaitSyncKHR;
   // NVIDIA does not honor implicit DMA-BUF fences.
   bool ignores_implicit_fences;
+  bool KHR_context_flush_control;
 };
 
 struct wlr_egl_context {
