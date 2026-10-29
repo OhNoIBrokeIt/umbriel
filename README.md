@@ -1,6 +1,6 @@
 # Umbriel
 
-Umbriel is a Wayland compositor designed for daily use, with scrolling, dwindle, master, and stacking layouts, per-output workspaces, window rules, blur, shadows, and fluid animations.
+A Wayland compositor designed for daily use, with scrolling, dwindle, master, and stacking layouts, per-output workspaces, window rules, blur, shadows, and fluid animations.
 
 It runs independently and pairs with [Noctalia](https://github.com/noctalia-dev/noctalia), which provides a first-class desktop shell on top. Under the hood: C++23, [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots), and `umbrielfx`, an in-tree hard fork of [SceneFX](https://github.com/wlrfx/scenefx).
 
